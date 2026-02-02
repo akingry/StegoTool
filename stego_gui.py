@@ -11,7 +11,7 @@ import threading
 import os
 
 # Import the robust encoding from book_cipher
-from book_cipher import encode_image, decode_image, MessageEncoder, RobustWatermark
+from book_cipher import encode_image, decode_image, BookCipher, RobustWatermark
 
 class StegoApp:
     def __init__(self, root):
@@ -28,6 +28,7 @@ class StegoApp:
         # Variables
         self.image_path = tk.StringVar()
         self.output_path = tk.StringVar()
+        self.source_text_path = tk.StringVar()  # Path to shared book/source text
         self.current_image = None
         self.preview_photo = None
         
@@ -75,6 +76,19 @@ class StegoApp:
         self.setup_info_tab(info_frame)
     
     def setup_encode_tab(self, parent):
+        # Source text selection (REQUIRED - the shared book)
+        source_frame = ttk.Frame(parent)
+        source_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(source_frame, text="Source Text (Book):").pack(side=tk.LEFT)
+        ttk.Entry(source_frame, textvariable=self.source_text_path, width=45).pack(side=tk.LEFT, padx=5)
+        ttk.Button(source_frame, text="Browse...", command=self.browse_source_text).pack(side=tk.LEFT)
+        
+        # Source text note
+        source_note = ttk.Label(parent, text="⚠️ IMPORTANT: Sender and receiver must share the SAME source text file!", 
+                                foreground='#f0883e', font=('Segoe UI', 9, 'bold'))
+        source_note.pack(anchor=tk.W, pady=(0, 10))
+        
         # Image selection
         img_frame = ttk.Frame(parent)
         img_frame.pack(fill=tk.X, pady=5)
@@ -113,7 +127,7 @@ class StegoApp:
         self.capacity_label.pack(anchor=tk.W, pady=5)
         
         # Encoding note
-        self.word_note = ttk.Label(parent, text="Note: Any text supported - compressed with zlib for efficiency", 
+        self.word_note = ttk.Label(parent, text="Note: Characters are encoded as positions in the source text (book cipher)", 
                                    foreground='#58a6ff', font=('Segoe UI', 9))
         self.word_note.pack(anchor=tk.W)
         
@@ -126,6 +140,20 @@ class StegoApp:
         self.encode_status.pack()
     
     def setup_decode_tab(self, parent):
+        # Source text selection (REQUIRED - must match sender's book)
+        source_frame = ttk.Frame(parent)
+        source_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(source_frame, text="Source Text (Book):").pack(side=tk.LEFT)
+        self.decode_source_path = tk.StringVar()
+        ttk.Entry(source_frame, textvariable=self.decode_source_path, width=45).pack(side=tk.LEFT, padx=5)
+        ttk.Button(source_frame, text="Browse...", command=self.browse_decode_source_text).pack(side=tk.LEFT)
+        
+        # Source text note
+        source_note = ttk.Label(parent, text="⚠️ Must be the SAME source text the sender used!", 
+                                foreground='#f0883e', font=('Segoe UI', 9, 'bold'))
+        source_note.pack(anchor=tk.W, pady=(0, 10))
+        
         # Image selection
         img_frame = ttk.Frame(parent)
         img_frame.pack(fill=tk.X, pady=5)
@@ -167,49 +195,63 @@ class StegoApp:
         ttk.Label(parent, text="How It Works", style='Header.TLabel').pack(anchor=tk.W, pady=(0, 15))
         
         info = """
-Robust Steganography with JPEG Survival
+Book Cipher Steganography with JPEG Survival
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-This tool uses a multi-layer approach for maximum robustness:
+⚠️ IMPORTANT: Sender and receiver must share the SAME 
+   source text (book) file to communicate!
 
-1. MESSAGE COMPRESSION
-   • Text encoded as UTF-8 bytes
-   • Compressed with zlib (typically 40-60% reduction)
-   • Any characters supported (letters, numbers, symbols)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+HOW THE BOOK CIPHER WORKS:
+
+Each character in your message is found in the source 
+text, and its RELATIVE position is recorded.
+
+Example: Message "The" with source text positions:
+   • 'T' found at position 325 → record: 325
+   • 'h' found at position 225 → record: -100 (backwards)
+   • 'e' found at position 228 → record: +3 (forwards)
+   
+Result: [325, -100, +3] (compressed and embedded)
+
+The cipher always finds the NEAREST occurrence of each
+character, whether forwards or backwards in the text.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+LAYERS OF PROTECTION:
+
+1. BOOK CIPHER
+   • Characters encoded as relative positions
+   • Requires shared source text (the "book")
+   • Positions compressed with zlib
 
 2. ERROR CORRECTION  
-   • Reed-Solomon coding adds 64 parity symbols
-   • Repetition coding repeats each bit 7 times
-   • Can recover from significant data corruption
+   • Reed-Solomon coding (64 parity symbols)
+   • Repetition coding (7x bit repetition)
+   • Recovers from JPEG compression artifacts
 
 3. DCT WATERMARKING
-   • Embeds data in discrete cosine transform coefficients
-   • Same domain used by JPEG compression
+   • Embeds in frequency domain coefficients
    • Survives JPEG/WebP quality down to 60
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Current Settings (max robustness):
-   • Strength: 150 (DCT modification)
-   • RS Symbols: 64  
-   • Repetition: 7x
+SECURITY:
 
-Capacity Limits (approximate):
-   • 640×480:    ~4,800 blocks  → ~50 chars
-   • 1280×720:   ~14,400 blocks → ~200 chars  
-   • 1920×1080:  ~32,400 blocks → ~500 chars
-   • 3840×2160:  ~129,600 blocks → ~2000 chars
-
-⚠️ High robustness = lower capacity
-   The exact limit is shown when you select an image.
+• Without the source text, the message cannot be decoded
+• Choose a book/text that only you and recipient have
+• Larger texts = more security (more positions to search)
+• The source text is your shared secret key
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Tips:
-   • Any text is supported (no word restrictions)
-   • Save as PNG or WebP (lossless) for best quality
-   • Can share as JPEG/WebP (quality 60+) on social media
-   • Recipient needs same tool + settings to decode
+   • Share the source text file securely beforehand
+   • Use any .txt file as your "book"
+   • Larger images = more message capacity
+   • Save as PNG/WebP lossless for best quality
         """
         
         info_text = scrolledtext.ScrolledText(parent, height=22, font=('Consolas', 9),
@@ -217,6 +259,22 @@ Tips:
         info_text.pack(fill=tk.BOTH, expand=True, pady=10)
         info_text.insert(tk.END, info)
         info_text.configure(state='disabled')
+    
+    def browse_source_text(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            title="Select Source Text (Book) - Must be shared with receiver"
+        )
+        if path:
+            self.source_text_path.set(path)
+    
+    def browse_decode_source_text(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            title="Select Source Text (Book) - Must match sender's book"
+        )
+        if path:
+            self.decode_source_path.set(path)
     
     def browse_image(self):
         path = filedialog.askopenfilename(
@@ -371,6 +429,10 @@ Tips:
         self.root.after(10, self.update_char_count)
     
     def encode_message(self):
+        if not self.source_text_path.get():
+            messagebox.showerror("Error", "Please select a source text (book) file.\n\nThis file must be shared with the receiver!")
+            return
+        
         if not self.image_path.get():
             messagebox.showerror("Error", "Please select a source image")
             return
@@ -419,7 +481,8 @@ Tips:
                 output_path,
                 strength=self.strength,
                 rs_symbols=self.rs_symbols,
-                repetition=self.repetition
+                repetition=self.repetition,
+                source_path=self.source_text_path.get()
             )
             self.root.after(0, lambda: self._encode_complete(output_path))
         except Exception as e:
@@ -437,9 +500,13 @@ Tips:
     def _encode_error(self, error):
         self.encode_btn.configure(state='normal')
         self.encode_status.configure(text=f"Error: {error[:50]}", foreground='#f85149')
-        messagebox.showerror("Encoding Failed", f"{error}\n\nTip: Try a shorter message or larger image.")
+        messagebox.showerror("Encoding Failed", f"{error}\n\nTips:\n• Check that your source text contains all characters in your message\n• Try a shorter message or larger image")
     
     def decode_message(self):
+        if not self.decode_source_path.get():
+            messagebox.showerror("Error", "Please select a source text (book) file.\n\nThis must be the SAME file the sender used!")
+            return
+        
         if not self.decode_path.get():
             messagebox.showerror("Error", "Please select an image to decode")
             return
@@ -456,7 +523,8 @@ Tips:
                 self.decode_path.get(),
                 strength=self.strength,
                 rs_symbols=self.rs_symbols,
-                repetition=self.repetition
+                repetition=self.repetition,
+                source_path=self.decode_source_path.get()
             )
             self.root.after(0, lambda: self._decode_complete(result))
         except Exception as e:

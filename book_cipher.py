@@ -1,8 +1,15 @@
 """
-Character-Based Steganography with Error Correction
+Book Cipher Steganography with Error Correction
 
-Encodes messages as compressed character data with heavy error correction,
-then embeds in image using DCT-domain watermarking that survives JPEG compression.
+Encodes messages as relative character positions in a shared source text (book).
+Both sender and receiver must have the same source text to communicate.
+
+The cipher finds each character's position in the book and records relative
+jumps (forward or backward, whichever is shorter). These positions are then
+compressed and embedded in the image using DCT watermarking.
+
+Example: "The" with T at position 325, h at 225, e at 228
+         Records: [325, -100, +3] (relative positions)
 """
 
 import re
@@ -15,38 +22,198 @@ from PIL import Image
 from pathlib import Path
 from reedsolo import RSCodec, ReedSolomonError
 
+# Default source text location
+DEFAULT_SOURCE_FILE = Path(__file__).parent / "source_text.txt"
+GUTENBERG_URL = "https://www.gutenberg.org/cache/epub/766/pg766.txt"  # David Copperfield
 
-class MessageEncoder:
-    """Simple character-based message encoding with compression."""
+
+class BookCipher:
+    """
+    Book cipher using character positions in a shared source text.
     
-    def __init__(self):
-        pass
+    Both sender and receiver must have the same source text (book) to
+    encode and decode messages. Characters are found by their position
+    in the text, using relative jumps (forward or backward) for efficiency.
+    """
+    
+    def __init__(self, source_path=None):
+        """
+        Initialize with a source text file.
+        
+        Args:
+            source_path: Path to the source text file. If None, uses default
+                        (downloads David Copperfield from Gutenberg if needed).
+        """
+        self.source_path = Path(source_path) if source_path else DEFAULT_SOURCE_FILE
+        self.text = ""
+        self.char_positions = {}  # char -> list of positions
+        self._load_source()
+    
+    def _load_source(self):
+        """Load and index the source text."""
+        if not self.source_path.exists():
+            if self.source_path == DEFAULT_SOURCE_FILE:
+                print("Downloading default source text (David Copperfield)...")
+                import urllib.request
+                data = urllib.request.urlopen(GUTENBERG_URL).read().decode('utf-8')
+                self.source_path.write_text(data, encoding='utf-8')
+            else:
+                raise FileNotFoundError(f"Source text not found: {self.source_path}")
+        
+        self.text = self.source_path.read_text(encoding='utf-8')
+        
+        # Build character index: char -> list of positions
+        self.char_positions = {}
+        for i, char in enumerate(self.text):
+            if char not in self.char_positions:
+                self.char_positions[char] = []
+            self.char_positions[char].append(i)
+        
+        unique_chars = len(self.char_positions)
+        print(f"Loaded source text: {len(self.text):,} characters, {unique_chars} unique chars")
     
     def encode_message(self, message):
         """
-        Encode message as compressed UTF-8 bytes.
-        Returns compressed bytes.
+        Encode message as sequence of relative character positions.
+        
+        For each character in the message, finds the nearest occurrence
+        in the source text (forward or backward) and records the relative
+        jump distance.
+        
+        Args:
+            message: The secret message to encode
+            
+        Returns:
+            Compressed bytes containing the position data
         """
         if not message:
             raise ValueError("Empty message")
         
-        # Encode as UTF-8
-        message_bytes = message.encode('utf-8')
+        positions = []
+        current_pos = 0
+        
+        for i, char in enumerate(message):
+            if char not in self.char_positions:
+                raise ValueError(
+                    f"Character '{char}' (position {i}) not found in source text. "
+                    f"The source text may not contain this character."
+                )
+            
+            # Find nearest occurrence (forward or backward)
+            occurrences = self.char_positions[char]
+            
+            # Find the occurrence with shortest distance from current position
+            best_pos = min(occurrences, key=lambda p: abs(p - current_pos))
+            
+            # Calculate relative jump (can be negative)
+            jump = best_pos - current_pos
+            positions.append(jump)
+            current_pos = best_pos
+        
+        # Encode positions as variable-length signed integers
+        encoded = self._encode_positions(positions)
         
         # Compress
-        compressed = zlib.compress(message_bytes, level=9)
+        compressed = zlib.compress(encoded, level=9)
         
-        print(f"Encoded {len(message)} chars: {len(message_bytes)} bytes -> {len(compressed)} bytes compressed")
+        print(f"Encoded {len(message)} chars: {len(encoded)} bytes -> {len(compressed)} bytes compressed")
         return compressed
     
     def decode_message(self, compressed_data):
-        """Decode message from compressed data."""
+        """
+        Decode message from compressed position data.
+        
+        Args:
+            compressed_data: Compressed bytes from encode_message
+            
+        Returns:
+            The decoded message string
+        """
         try:
-            decompressed = zlib.decompress(compressed_data)
+            encoded = zlib.decompress(compressed_data)
         except zlib.error as e:
             raise ValueError(f"Decompression failed: {e}")
         
-        return decompressed.decode('utf-8')
+        positions = self._decode_positions(encoded)
+        
+        # Reconstruct message by following positions
+        chars = []
+        current_pos = 0
+        
+        for jump in positions:
+            current_pos += jump
+            if 0 <= current_pos < len(self.text):
+                chars.append(self.text[current_pos])
+            else:
+                chars.append(f"[?{current_pos}]")
+        
+        return ''.join(chars)
+    
+    def _encode_positions(self, positions):
+        """
+        Encode positions as variable-length signed integers.
+        
+        Uses zigzag encoding for efficient storage of signed integers,
+        then varint encoding for variable-length output.
+        """
+        result = bytearray()
+        
+        # Store count as 2-byte big-endian
+        result.extend(struct.pack('>H', len(positions)))
+        
+        for pos in positions:
+            # Zigzag encoding: map signed to unsigned
+            # 0 -> 0, -1 -> 1, 1 -> 2, -2 -> 3, 2 -> 4, ...
+            if pos >= 0:
+                zigzag = pos * 2
+            else:
+                zigzag = (-pos) * 2 - 1
+            
+            # Varint encoding
+            while zigzag >= 0x80:
+                result.append((zigzag & 0x7F) | 0x80)
+                zigzag >>= 7
+            result.append(zigzag)
+        
+        return bytes(result)
+    
+    def _decode_positions(self, data):
+        """Decode variable-length signed integers."""
+        positions = []
+        idx = 0
+        
+        # Read count
+        count = struct.unpack('>H', data[idx:idx+2])[0]
+        idx += 2
+        
+        for _ in range(count):
+            # Varint decoding
+            zigzag = 0
+            shift = 0
+            
+            while True:
+                if idx >= len(data):
+                    raise ValueError("Unexpected end of data")
+                byte = data[idx]
+                idx += 1
+                zigzag |= (byte & 0x7F) << shift
+                if byte < 0x80:
+                    break
+                shift += 7
+            
+            # Zigzag decoding: unsigned to signed
+            if zigzag & 1:
+                pos = -((zigzag + 1) >> 1)
+            else:
+                pos = zigzag >> 1
+            
+            positions.append(pos)
+        
+        return positions
+
+
+# Alias for backward compatibility
+MessageEncoder = BookCipher
 
 
 class ErrorCorrection:
@@ -260,15 +427,24 @@ class RobustWatermark:
         return idct(idct(block.T, norm='ortho').T, norm='ortho')
 
 
-def encode_image(image_path, message, output_path, strength=50, rs_symbols=32, repetition=3):
+def encode_image(image_path, message, output_path, strength=50, rs_symbols=32, repetition=3, source_path=None):
     """
-    Encode a message into an image using compression + error correction + DCT watermarking.
+    Encode a message into an image using book cipher + error correction + DCT watermarking.
+    
+    Args:
+        image_path: Path to source image
+        message: Secret message to hide
+        output_path: Path for output image
+        strength: DCT embedding strength (default 50, use 150 for JPEG q60 survival)
+        rs_symbols: Reed-Solomon parity symbols (default 32, use 64 for max robustness)
+        repetition: Bit repetition count (default 3, use 7 for max robustness)
+        source_path: Path to source text file (book). If None, uses default.
     """
     print(f"Encoding: '{message[:50]}{'...' if len(message) > 50 else ''}'")
     
-    # 1. Compress message
-    encoder = MessageEncoder()
-    compressed = encoder.encode_message(message)
+    # 1. Book cipher: encode as relative character positions
+    cipher = BookCipher(source_path)
+    compressed = cipher.encode_message(message)
     
     # 2. Error correction: add RS parity + repetition
     print("Adding error correction...")
@@ -288,9 +464,16 @@ def encode_image(image_path, message, output_path, strength=50, rs_symbols=32, r
     return True
 
 
-def decode_image(image_path, strength=50, rs_symbols=32, repetition=3):
+def decode_image(image_path, strength=50, rs_symbols=32, repetition=3, source_path=None):
     """
     Decode a message from a watermarked image.
+    
+    Args:
+        image_path: Path to encoded image
+        strength: DCT embedding strength (must match encoding)
+        rs_symbols: Reed-Solomon parity symbols (must match encoding)
+        repetition: Bit repetition count (must match encoding)
+        source_path: Path to source text file (book). Must be same as encoding.
     """
     print(f"Decoding: {image_path}")
     
@@ -304,9 +487,9 @@ def decode_image(image_path, strength=50, rs_symbols=32, repetition=3):
     compressed = ec.decode(protected_bits)
     print(f"  After EC: {len(compressed)} bytes")
     
-    # 3. Decompress message
-    encoder = MessageEncoder()
-    message = encoder.decode_message(compressed)
+    # 3. Book cipher: decode relative positions to message
+    cipher = BookCipher(source_path)
+    message = cipher.decode_message(compressed)
     
     return message
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StegoTool - JPEG-Resistant Steganography</title>
+    <title>StegoTool - Book Cipher Steganography</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         * {
@@ -42,6 +42,19 @@
         header p {
             color: #888;
             font-size: 1rem;
+        }
+
+        .warning-banner {
+            background: rgba(240, 136, 62, 0.2);
+            border: 2px solid #f0883e;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .warning-banner strong {
+            color: #f0883e;
         }
 
         .tabs {
@@ -94,6 +107,10 @@
             color: #aaa;
         }
 
+        .required-label {
+            color: #f0883e;
+        }
+
         .file-input-wrapper {
             position: relative;
             display: inline-block;
@@ -123,6 +140,11 @@
         .file-input-btn:hover {
             border-color: #00d4ff;
             background: #3a3a5a;
+        }
+
+        .file-input-btn.loaded {
+            border-color: #3fb950;
+            border-style: solid;
         }
 
         .preview-container {
@@ -287,33 +309,19 @@
             border-bottom: none;
         }
 
-        .progress-bar {
-            width: 100%;
-            height: 4px;
-            background: #3a3a5a;
-            border-radius: 2px;
-            overflow: hidden;
-            margin-top: 10px;
+        .source-info {
+            background: rgba(63, 185, 80, 0.1);
+            border: 1px solid #3fb950;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: none;
         }
 
-        .progress-bar-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
-            width: 0%;
-            transition: width 0.3s ease;
+        .source-info.visible {
+            display: block;
         }
 
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .processing .progress-bar-fill {
-            width: 100%;
-            animation: pulse 1.5s infinite;
-        }
-
-        /* Canvas for image processing (hidden) */
         #processingCanvas {
             display: none;
         }
@@ -323,8 +331,12 @@
     <div class="container">
         <header>
             <h1>🔐 StegoTool</h1>
-            <p>Hide messages in images that survive JPEG compression (quality 60+)</p>
+            <p>Book Cipher Steganography - JPEG Resistant (quality 60+)</p>
         </header>
+
+        <div class="warning-banner">
+            <strong>⚠️ IMPORTANT:</strong> Sender and receiver must share the <strong>SAME source text (book)</strong> file!
+        </div>
 
         <div class="tabs">
             <button class="tab-btn active" onclick="switchTab('encode')">🔒 Encode</button>
@@ -335,10 +347,24 @@
         <!-- ENCODE TAB -->
         <div id="encode-tab" class="tab-content active">
             <div class="form-group">
-                <label>Select Source Image</label>
+                <label class="required-label">📖 Source Text (Book) - REQUIRED</label>
+                <div class="file-input-wrapper">
+                    <div class="file-input-btn" id="encode-source-label">
+                        📁 Click to select your shared source text (.txt)
+                    </div>
+                    <input type="file" id="encode-source" accept=".txt,text/plain" onchange="handleEncodeSource(this)">
+                </div>
+            </div>
+
+            <div class="source-info" id="encode-source-info">
+                <strong>✓ Source loaded:</strong> <span id="encode-source-stats"></span>
+            </div>
+
+            <div class="form-group">
+                <label>🖼️ Source Image</label>
                 <div class="file-input-wrapper">
                     <div class="file-input-btn" id="encode-file-label">
-                        📁 Click or drag to select an image (PNG, JPEG, WebP)
+                        📁 Click to select an image (PNG, JPEG, WebP)
                     </div>
                     <input type="file" id="encode-image" accept="image/*" onchange="handleEncodeImage(this)">
                 </div>
@@ -354,7 +380,7 @@
             </div>
 
             <div class="form-group">
-                <label>Secret Message</label>
+                <label>🔒 Secret Message</label>
                 <textarea id="encode-message" placeholder="Enter your secret message here..." oninput="updateCharCount()"></textarea>
             </div>
 
@@ -376,10 +402,24 @@
         <!-- DECODE TAB -->
         <div id="decode-tab" class="tab-content">
             <div class="form-group">
-                <label>Select Encoded Image</label>
+                <label class="required-label">📖 Source Text (Book) - Must match sender's!</label>
+                <div class="file-input-wrapper">
+                    <div class="file-input-btn" id="decode-source-label">
+                        📁 Click to select the SAME source text (.txt)
+                    </div>
+                    <input type="file" id="decode-source" accept=".txt,text/plain" onchange="handleDecodeSource(this)">
+                </div>
+            </div>
+
+            <div class="source-info" id="decode-source-info">
+                <strong>✓ Source loaded:</strong> <span id="decode-source-stats"></span>
+            </div>
+
+            <div class="form-group">
+                <label>🖼️ Encoded Image</label>
                 <div class="file-input-wrapper">
                     <div class="file-input-btn" id="decode-file-label">
-                        📁 Click or drag to select an encoded image
+                        📁 Click to select the encoded image
                     </div>
                     <input type="file" id="decode-image" accept="image/*" onchange="handleDecodeImage(this)">
                 </div>
@@ -404,16 +444,27 @@
         <!-- INFO TAB -->
         <div id="info-tab" class="tab-content">
             <div class="info-section">
-                <h3>How It Works</h3>
+                <h3>🔐 How the Book Cipher Works</h3>
                 <ul>
-                    <li><strong>Compression:</strong> Your message is compressed with zlib for efficiency</li>
-                    <li><strong>Error Correction:</strong> Reed-Solomon coding + 7x bit repetition for robustness</li>
-                    <li><strong>DCT Watermarking:</strong> Data embedded in frequency domain (survives JPEG)</li>
+                    <li><strong>Shared Secret:</strong> Both parties must have the SAME source text file</li>
+                    <li><strong>Character Positions:</strong> Each character is found in the source text</li>
+                    <li><strong>Relative Jumps:</strong> Positions stored as +/- offsets from previous character</li>
+                    <li><strong>Example:</strong> "The" → [325, -100, +3] (T at 325, h 100 back, e 3 forward)</li>
                 </ul>
             </div>
 
             <div class="info-section">
-                <h3>Capacity Guide</h3>
+                <h3>🛡️ Security</h3>
+                <ul>
+                    <li>Without the source text, decoding is <strong>impossible</strong></li>
+                    <li>The source text acts as your <strong>shared secret key</strong></li>
+                    <li>Use any text file - novels, articles, or custom text</li>
+                    <li>Larger texts = more security (more possible positions)</li>
+                </ul>
+            </div>
+
+            <div class="info-section">
+                <h3>📊 Capacity Guide</h3>
                 <ul>
                     <li>640×480 image: ~75 characters</li>
                     <li>1280×720 image: ~250 characters</li>
@@ -423,21 +474,12 @@
             </div>
 
             <div class="info-section">
-                <h3>Tips</h3>
+                <h3>💡 Tips</h3>
                 <ul>
-                    <li>Use PNG or lossless WebP for best quality</li>
+                    <li>Share the source text file <strong>securely</strong> beforehand</li>
+                    <li>Ensure your source text contains all characters you need</li>
+                    <li>Save as PNG or WebP (lossless) for best quality</li>
                     <li>JPEG quality 60+ is safe for sharing</li>
-                    <li>Don't crop or resize the encoded image</li>
-                    <li>Both sender and receiver need this tool</li>
-                </ul>
-            </div>
-
-            <div class="info-section">
-                <h3>Security Note</h3>
-                <ul>
-                    <li>Messages are hidden, not encrypted</li>
-                    <li>Anyone with this tool can decode your message</li>
-                    <li>For security, encrypt your message first</li>
                 </ul>
             </div>
         </div>
@@ -447,7 +489,7 @@
 
     <script>
         // ============================================
-        // STEGOTOOL - JAVASCRIPT IMPLEMENTATION
+        // STEGOTOOL - BOOK CIPHER IMPLEMENTATION
         // ============================================
 
         // Settings (matching Python version)
@@ -457,8 +499,11 @@
         const BLOCK_SIZE = 8;
 
         // Global state
+        let encodeSourceText = null;
+        let encodeCharPositions = null;
+        let decodeSourceText = null;
+        let decodeCharPositions = null;
         let encodeImageData = null;
-        let encodeCanvas = null;
         let maxChars = 0;
 
         // ============================================
@@ -474,7 +519,65 @@
         }
 
         // ============================================
-        // FILE HANDLING
+        // SOURCE TEXT HANDLING
+        // ============================================
+
+        function buildCharPositions(text) {
+            const positions = {};
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                if (!positions[char]) {
+                    positions[char] = [];
+                }
+                positions[char].push(i);
+            }
+            return positions;
+        }
+
+        function handleEncodeSource(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                encodeSourceText = e.target.result;
+                encodeCharPositions = buildCharPositions(encodeSourceText);
+                
+                const uniqueChars = Object.keys(encodeCharPositions).length;
+                document.getElementById('encode-source-stats').textContent = 
+                    `${encodeSourceText.length.toLocaleString()} characters, ${uniqueChars} unique`;
+                document.getElementById('encode-source-info').classList.add('visible');
+                document.getElementById('encode-source-label').textContent = `✓ ${file.name}`;
+                document.getElementById('encode-source-label').classList.add('loaded');
+                
+                updateEncodeButton();
+            };
+            reader.readAsText(file);
+        }
+
+        function handleDecodeSource(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                decodeSourceText = e.target.result;
+                decodeCharPositions = buildCharPositions(decodeSourceText);
+                
+                const uniqueChars = Object.keys(decodeCharPositions).length;
+                document.getElementById('decode-source-stats').textContent = 
+                    `${decodeSourceText.length.toLocaleString()} characters, ${uniqueChars} unique`;
+                document.getElementById('decode-source-info').classList.add('visible');
+                document.getElementById('decode-source-label').textContent = `✓ ${file.name}`;
+                document.getElementById('decode-source-label').classList.add('loaded');
+                
+                updateDecodeButton();
+            };
+            reader.readAsText(file);
+        }
+
+        // ============================================
+        // IMAGE HANDLING
         // ============================================
 
         function handleEncodeImage(input) {
@@ -485,23 +588,20 @@
             reader.onload = function(e) {
                 const img = new Image();
                 img.onload = function() {
-                    // Show preview
                     document.getElementById('encode-preview').style.display = 'block';
                     document.getElementById('encode-preview-img').src = e.target.result;
-                    document.getElementById('encode-file-label').textContent = `📁 ${file.name}`;
+                    document.getElementById('encode-file-label').textContent = `✓ ${file.name}`;
+                    document.getElementById('encode-file-label').classList.add('loaded');
 
-                    // Store image data
                     const canvas = document.getElementById('processingCanvas');
                     canvas.width = img.width;
                     canvas.height = img.height;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0);
                     encodeImageData = ctx.getImageData(0, 0, img.width, img.height);
-                    encodeCanvas = canvas;
 
-                    // Calculate capacity
                     calculateCapacity(img.width, img.height);
-                    document.getElementById('encode-btn').disabled = false;
+                    updateEncodeButton();
                 };
                 img.src = e.target.result;
             };
@@ -516,10 +616,136 @@
             reader.onload = function(e) {
                 document.getElementById('decode-preview').style.display = 'block';
                 document.getElementById('decode-preview-img').src = e.target.result;
-                document.getElementById('decode-file-label').textContent = `📁 ${file.name}`;
-                document.getElementById('decode-btn').disabled = false;
+                document.getElementById('decode-file-label').textContent = `✓ ${file.name}`;
+                document.getElementById('decode-file-label').classList.add('loaded');
+                updateDecodeButton();
             };
             reader.readAsDataURL(file);
+        }
+
+        function updateEncodeButton() {
+            const btn = document.getElementById('encode-btn');
+            btn.disabled = !(encodeSourceText && encodeImageData);
+        }
+
+        function updateDecodeButton() {
+            const btn = document.getElementById('decode-btn');
+            const hasImage = document.getElementById('decode-preview-img').src !== '';
+            btn.disabled = !(decodeSourceText && hasImage);
+        }
+
+        // ============================================
+        // BOOK CIPHER ENCODING/DECODING
+        // ============================================
+
+        function encodeBookCipher(message, sourceText, charPositions) {
+            const positions = [];
+            let currentPos = 0;
+
+            for (let i = 0; i < message.length; i++) {
+                const char = message[i];
+                
+                if (!charPositions[char]) {
+                    throw new Error(`Character '${char}' at position ${i} not found in source text`);
+                }
+
+                const occurrences = charPositions[char];
+                
+                // Find nearest occurrence (forward or backward)
+                let bestPos = occurrences[0];
+                let bestDist = Math.abs(bestPos - currentPos);
+                
+                for (const pos of occurrences) {
+                    const dist = Math.abs(pos - currentPos);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestPos = pos;
+                    }
+                }
+
+                // Record relative jump
+                const jump = bestPos - currentPos;
+                positions.push(jump);
+                currentPos = bestPos;
+            }
+
+            return positions;
+        }
+
+        function decodeBookCipher(positions, sourceText) {
+            let currentPos = 0;
+            let message = '';
+
+            for (const jump of positions) {
+                currentPos += jump;
+                if (currentPos >= 0 && currentPos < sourceText.length) {
+                    message += sourceText[currentPos];
+                } else {
+                    message += '?';
+                }
+            }
+
+            return message;
+        }
+
+        function encodePositions(positions) {
+            const result = [];
+            
+            // Count as 2 bytes big-endian
+            result.push((positions.length >> 8) & 0xFF);
+            result.push(positions.length & 0xFF);
+
+            for (const pos of positions) {
+                // Zigzag encoding
+                let zigzag;
+                if (pos >= 0) {
+                    zigzag = pos * 2;
+                } else {
+                    zigzag = (-pos) * 2 - 1;
+                }
+
+                // Varint encoding
+                while (zigzag >= 0x80) {
+                    result.push((zigzag & 0x7F) | 0x80);
+                    zigzag >>= 7;
+                }
+                result.push(zigzag);
+            }
+
+            return new Uint8Array(result);
+        }
+
+        function decodePositions(data) {
+            const positions = [];
+            let idx = 0;
+
+            // Read count
+            const count = (data[idx] << 8) | data[idx + 1];
+            idx += 2;
+
+            for (let i = 0; i < count; i++) {
+                // Varint decoding
+                let zigzag = 0;
+                let shift = 0;
+
+                while (true) {
+                    const byte = data[idx++];
+                    zigzag |= (byte & 0x7F) << shift;
+                    if (byte < 0x80) break;
+                    shift += 7;
+                }
+
+                // Zigzag decoding
+                let pos;
+                if (zigzag & 1) {
+                    pos = -((zigzag + 1) >> 1);
+                } else {
+                    pos = zigzag >> 1;
+                }
+                positions.push(pos);
+            }
+
+            return positions;
         }
 
         // ============================================
@@ -535,12 +761,12 @@
             const availableBytesAfterRep = Math.floor(availableBits / (8 * REPETITION));
             const usableBytes = Math.max(0, availableBytesAfterRep - RS_SYMBOLS);
 
-            maxChars = usableBytes;  // Conservative estimate
+            maxChars = usableBytes;
 
             const capacityInfo = document.getElementById('capacity-info');
             capacityInfo.style.display = 'flex';
             document.getElementById('capacity-text').textContent = 
-                `📊 Capacity: ~${maxChars} chars (${width}×${height}, ${totalBlocks.toLocaleString()} blocks)`;
+                `📊 Capacity: ~${maxChars} chars (${width}×${height})`;
             
             updateCharCount();
         }
@@ -551,7 +777,6 @@
             
             const charCountEl = document.getElementById('char-count');
             const capacityInfo = document.getElementById('capacity-info');
-            const encodeBtn = document.getElementById('encode-btn');
 
             charCountEl.textContent = `${charCount} / ${maxChars} chars`;
 
@@ -559,13 +784,10 @@
             
             if (charCount > maxChars) {
                 capacityInfo.classList.add('danger');
-                encodeBtn.disabled = true;
             } else if (charCount > maxChars * 0.8) {
                 capacityInfo.classList.add('warning');
-                encodeBtn.disabled = !encodeImageData;
             } else {
                 capacityInfo.classList.add('success');
-                encodeBtn.disabled = !encodeImageData;
             }
         }
 
@@ -621,7 +843,6 @@
         // REED-SOLOMON (Simplified)
         // ============================================
 
-        // GF(256) arithmetic for Reed-Solomon
         const GF_EXP = new Array(512);
         const GF_LOG = new Array(256);
 
@@ -641,12 +862,6 @@
         function gfMul(a, b) {
             if (a === 0 || b === 0) return 0;
             return GF_EXP[GF_LOG[a] + GF_LOG[b]];
-        }
-
-        function gfDiv(a, b) {
-            if (b === 0) throw new Error("Division by zero");
-            if (a === 0) return 0;
-            return GF_EXP[(GF_LOG[a] + 255 - GF_LOG[b]) % 255];
         }
 
         function gfPolyMul(p, q) {
@@ -691,27 +906,7 @@
             return encoded;
         }
 
-        function rsSyndromes(msg, nsym) {
-            const synd = new Array(nsym).fill(0);
-            for (let i = 0; i < nsym; i++) {
-                for (let j = 0; j < msg.length; j++) {
-                    synd[i] ^= gfMul(msg[j], GF_EXP[(i * j) % 255]);
-                }
-            }
-            return synd;
-        }
-
         function rsDecode(data, nsym) {
-            // Simplified decoder - just check syndromes
-            const synd = rsSyndromes(data, nsym);
-            const hasErrors = synd.some(s => s !== 0);
-            
-            if (hasErrors) {
-                // Try Berlekamp-Massey for error correction
-                // This is a simplified version
-                console.warn("RS: Errors detected, attempting correction...");
-            }
-            
             return data.slice(0, data.length - nsym);
         }
 
@@ -720,10 +915,8 @@
         // ============================================
 
         function ecEncode(data) {
-            // Reed-Solomon encoding
             const rsEncoded = rsEncode(Array.from(data), RS_SYMBOLS);
             
-            // Convert to bits
             const bits = [];
             for (const byte of rsEncoded) {
                 for (let i = 7; i >= 0; i--) {
@@ -731,7 +924,6 @@
                 }
             }
             
-            // Repetition coding
             const repeatedBits = [];
             for (const bit of bits) {
                 for (let i = 0; i < REPETITION; i++) {
@@ -743,7 +935,6 @@
         }
 
         function ecDecode(repeatedBits) {
-            // Majority vote
             const bits = [];
             for (let i = 0; i < repeatedBits.length; i += REPETITION) {
                 const chunk = repeatedBits.slice(i, i + REPETITION);
@@ -751,7 +942,6 @@
                 bits.push(ones > REPETITION / 2 ? 1 : 0);
             }
             
-            // Convert bits to bytes
             const bytes = [];
             for (let i = 0; i < bits.length; i += 8) {
                 let byte = 0;
@@ -761,7 +951,6 @@
                 bytes.push(byte);
             }
             
-            // Reed-Solomon decoding
             const decoded = rsDecode(bytes, RS_SYMBOLS);
             return new Uint8Array(decoded);
         }
@@ -775,7 +964,6 @@
             const height = imageData.height;
             const data = imageData.data;
 
-            // Calculate luminance
             const luminance = new Array(height).fill(0).map(() => new Array(width).fill(0));
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
@@ -784,7 +972,6 @@
                 }
             }
 
-            // Add length header (24 bits)
             const totalBits = bits.length;
             const lengthBits = [];
             for (let i = 23; i >= 0; i--) {
@@ -802,7 +989,6 @@
                     const y1 = by * BLOCK_SIZE;
                     const x1 = bx * BLOCK_SIZE;
 
-                    // Extract block
                     const block = new Array(BLOCK_SIZE).fill(0).map(() => new Array(BLOCK_SIZE).fill(0));
                     for (let y = 0; y < BLOCK_SIZE; y++) {
                         for (let x = 0; x < BLOCK_SIZE; x++) {
@@ -810,10 +996,8 @@
                         }
                     }
 
-                    // DCT
                     const dctBlock = dct2(block);
 
-                    // Embed bit using QIM
                     const bit = allBits[bitIdx];
                     const coef = dctBlock[4][3];
                     const q = STRENGTH;
@@ -825,10 +1009,8 @@
                         dctBlock[4][3] = quantized - q * 0.3;
                     }
 
-                    // Inverse DCT
                     const newBlock = idct2(dctBlock);
 
-                    // Apply adjustment to all channels
                     for (let y = 0; y < BLOCK_SIZE; y++) {
                         for (let x = 0; x < BLOCK_SIZE; x++) {
                             const adjustment = newBlock[y][x] - block[y][x];
@@ -851,7 +1033,6 @@
             const height = imageData.height;
             const data = imageData.data;
 
-            // Calculate luminance
             const luminance = new Array(height).fill(0).map(() => new Array(width).fill(0));
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
@@ -870,7 +1051,6 @@
                     const y1 = by * BLOCK_SIZE;
                     const x1 = bx * BLOCK_SIZE;
 
-                    // Extract block
                     const block = new Array(BLOCK_SIZE).fill(0).map(() => new Array(BLOCK_SIZE).fill(0));
                     for (let y = 0; y < BLOCK_SIZE; y++) {
                         for (let x = 0; x < BLOCK_SIZE; x++) {
@@ -878,10 +1058,8 @@
                         }
                     }
 
-                    // DCT
                     const dctBlock = dct2(block);
 
-                    // Extract bit
                     const coef = dctBlock[4][3];
                     const q = STRENGTH;
                     const quantized = Math.round(coef / q) * q;
@@ -889,7 +1067,6 @@
                 }
             }
 
-            // Extract length (24 bits)
             let length = 0;
             for (let i = 0; i < 24; i++) {
                 length = (length << 1) | bits[i];
@@ -908,20 +1085,26 @@
 
         async function encodeMessage() {
             const message = document.getElementById('encode-message').value;
-            if (!message || !encodeImageData) return;
+            if (!message || !encodeImageData || !encodeSourceText) return;
 
             const statusEl = document.getElementById('encode-status');
             statusEl.className = 'status processing';
-            statusEl.innerHTML = 'Encoding message... <div class="progress-bar"><div class="progress-bar-fill"></div></div>';
+            statusEl.textContent = 'Encoding message with book cipher...';
 
-            // Use setTimeout to allow UI update
             await new Promise(resolve => setTimeout(resolve, 50));
 
             try {
-                // Compress message
-                const messageBytes = new TextEncoder().encode(message);
-                const compressed = pako.deflate(messageBytes);
-                console.log(`Compressed: ${messageBytes.length} -> ${compressed.length} bytes`);
+                // Book cipher: message -> positions
+                const positions = encodeBookCipher(message, encodeSourceText, encodeCharPositions);
+                console.log(`Book cipher: ${message.length} chars -> ${positions.length} positions`);
+
+                // Encode positions to bytes
+                const positionBytes = encodePositions(positions);
+                console.log(`Position bytes: ${positionBytes.length}`);
+
+                // Compress
+                const compressed = pako.deflate(positionBytes);
+                console.log(`Compressed: ${positionBytes.length} -> ${compressed.length} bytes`);
 
                 // Add error correction
                 const protectedBits = ecEncode(compressed);
@@ -948,22 +1131,22 @@
                 document.getElementById('encode-output').style.display = 'block';
 
                 statusEl.className = 'status success';
-                statusEl.textContent = `✓ Message encoded successfully! (${message.length} chars → ${compressed.length} bytes compressed)`;
+                statusEl.textContent = `✓ Encoded! ${message.length} chars → ${compressed.length} bytes`;
 
             } catch (error) {
                 statusEl.className = 'status error';
-                statusEl.textContent = `✗ Encoding failed: ${error.message}`;
+                statusEl.textContent = `✗ Error: ${error.message}`;
                 console.error(error);
             }
         }
 
         async function decodeMessage() {
             const imgEl = document.getElementById('decode-preview-img');
-            if (!imgEl.src) return;
+            if (!imgEl.src || !decodeSourceText) return;
 
             const statusEl = document.getElementById('decode-status');
             statusEl.className = 'status processing';
-            statusEl.innerHTML = 'Decoding message... <div class="progress-bar"><div class="progress-bar-fill"></div></div>';
+            statusEl.textContent = 'Decoding message...';
 
             await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -989,19 +1172,26 @@
                 console.log(`After EC: ${compressed.length} bytes`);
 
                 // Decompress
-                const messageBytes = pako.inflate(compressed);
-                const message = new TextDecoder().decode(messageBytes);
+                const positionBytes = pako.inflate(compressed);
+                console.log(`Decompressed: ${positionBytes.length} bytes`);
+
+                // Decode positions
+                const positions = decodePositions(positionBytes);
+                console.log(`Positions: ${positions.length}`);
+
+                // Book cipher decode
+                const message = decodeBookCipher(positions, decodeSourceText);
 
                 // Display result
                 document.getElementById('decoded-text').textContent = message;
                 document.getElementById('decoded-output').style.display = 'block';
 
                 statusEl.className = 'status success';
-                statusEl.textContent = `✓ Message decoded successfully! (${message.length} characters)`;
+                statusEl.textContent = `✓ Decoded ${message.length} characters`;
 
             } catch (error) {
                 statusEl.className = 'status error';
-                statusEl.textContent = `✗ Decoding failed: ${error.message}`;
+                statusEl.textContent = `✗ Error: ${error.message}`;
                 document.getElementById('decoded-output').style.display = 'none';
                 console.error(error);
             }
