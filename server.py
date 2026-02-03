@@ -266,8 +266,10 @@ def run_server(port=8080):
     if not load_source_text():
         print("\nServer starting anyway, but encode/decode will fail without source_text.txt")
     
-    server = HTTPServer(('localhost', port), KGBCRESTHandler)
-    print(f"\nKGBCREST server running at http://localhost:{port}")
+    # Use 0.0.0.0 to accept external connections (for cloud hosting)
+    host = '0.0.0.0'
+    server = HTTPServer((host, port), KGBCRESTHandler)
+    print(f"\nKGBCREST server running on port {port}")
     print("Press Ctrl+C to stop")
     try:
         server.serve_forever()
@@ -278,5 +280,6 @@ def run_server(port=8080):
 
 if __name__ == '__main__':
     import sys
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+    # Check for PORT environment variable (Railway, Render, etc.)
+    port = int(os.environ.get('PORT', sys.argv[1] if len(sys.argv) > 1 else 8080))
     run_server(port)
